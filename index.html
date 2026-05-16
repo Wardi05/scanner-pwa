@@ -5,179 +5,171 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
-  <title>Scanner PWA</title>
+  <title>Scanner Check-in PWA</title>
 
+  <!-- PWA -->
   <link rel="manifest" href="manifest.json">
+
+  <!-- LIB QR SCANNER (WAJIB INI) -->
+  <script src="https://unpkg.com/html5-qrcode"></script>
 
   <style>
     body {
-      margin:0;
-      font-family:sans-serif;
-      background:#111;
-      color:white;
-      text-align:center;
+      margin: 0;
+      font-family: Arial;
+      background: #111;
+      color: white;
+      text-align: center;
     }
 
-    video {
-      width:100%;
-      max-width:500px;
-      border-radius:10px;
-      margin-top:10px;
+    header {
+      padding: 15px;
+      background: #000;
+      font-weight: bold;
+      font-size: 18px;
+    }
+
+    #reader {
+      width: 100%;
+      max-width: 500px;
+      margin: auto;
     }
 
     button {
-      padding:12px 20px;
-      background:green;
-      color:white;
-      border:none;
-      border-radius:10px;
-      margin-top:10px;
+      margin-top: 15px;
+      padding: 12px 20px;
+      background: #16a34a;
+      color: white;
+      border: none;
+      border-radius: 10px;
+      font-size: 16px;
+    }
+
+    #result {
+      margin-top: 15px;
+      font-size: 20px;
+      font-weight: bold;
     }
   </style>
-
 </head>
 
 <body>
 
-<h2>Scanner Check-in PWA</h2>
+  <header>
+    ADMIN SCANNER CHECK-IN
+  </header>
 
-<button onclick="startCamera()">📷 Buka Kamera</button>
+  <button onclick="startCamera()">📷 BUKA KAMERA</button>
 
-<video id="video" autoplay></video>
+  <div id="reader"></div>
 
-<p id="result"></p>
+  <div id="result">Menunggu scan...</div>
 
-<script>
+  <script>
 
-let video = document.getElementById("video");
-let scanning = false;
+    let html5QrCode;
+    let scanning = false;
 
-// =====================
-// CAMERA
-// =====================
-async function startCamera() {
+    // =========================
+    // START CAMERA
+    // =========================
+    function startCamera() {
 
-  try {
+      html5QrCode = new Html5Qrcode("reader");
 
-    const stream = await navigator.mediaDevices.getUserMedia({
-      video: { facingMode: "environment" }
-    });
+      Html5Qrcode.getCameras().then(cameras => {
 
-    video.srcObject = stream;
+        if (!cameras || cameras.length === 0) {
+          alert("Kamera tidak ditemukan");
+          return;
+        }
 
-    scanLoop();
+        let cameraId = cameras[0].id;
 
-  } catch (err) {
-    alert("Kamera gagal: " + err.message);
-  }
-}
+        // pilih kamera belakang
+        cameras.forEach(c => {
+          if (c.label.toLowerCase().includes("back")) {
+            cameraId = c.id;
+          }
+        });
 
-// =====================
-// QR DETECTOR
-// =====================
-async function scanLoop() {
+        html5QrCode.start(
+          cameraId,
+          {
+            fps: 10,
+            qrbox: 250
+          },
+          onScanSuccess
+        );
 
-  const detector = new BarcodeDetector({
-    formats: ["qr_code"]
-  });
+      }).catch(err => {
+        alert("Gagal akses kamera: " + err);
+      });
+    }
 
-  const canvas = document.createElement("canvas");
-  const ctx = canvas.getContext("2d");
+    // =========================
+    // HANDLE SCAN
+    // =========================
+    function onScanSuccess(text) {
 
-  setInterval(async () => {
+      if (scanning) return;
+      scanning = true;
 
-    if (scanning) return;
-    if (video.readyState !== 4) return;
+      console.log("QR RAW:", text);
 
-    canvas.width = video.videoWidth;
-    canvas.height = video.videoHeight;
+      let data;
 
-    ctx.drawImage(video, 0, 0);
+      try {
+        data = JSON.parse(text);
+      } catch (e) {
 
-    try {
+        document.getElementById("result").innerText =
+          "QR tidak valid";
 
-      const codes = await detector.detect(canvas);
-
-      if (codes.length > 0) {
-
-        scanning = true;
-
-        handleScan(codes[0].rawValue);
+        scanning = false;
+        return;
       }
 
-    } catch (e) {}
+      if (!data.regId) {
 
-  }, 500);
-}
+        document.getElementById("result").innerText =
+          "QR tidak punya regId";
 
-// =====================
-// HANDLE SCAN
-// =====================
-function handleScan(text) {
-
-  console.log("RAW QR:", text);
-
-  let data;
-
-  // =========================
-  // PARSE JSON QR
-  // =========================
-  try {
-    data = JSON.parse(text);
-  } catch (e) {
-    document.getElementById("result").innerText =
-      "QR tidak valid (bukan JSON)";
-    scanning = false;
-    return;
-  }
-
-  // =========================
-  // CEK REGID
-  // =========================
-  if (!data.regId) {
-    document.getElementById("result").innerText =
-      "QR tidak punya regId";
-    scanning = false;
-    return;
-  }
-
-  // =========================
-  // KIRIM KE GOOGLE SCRIPT
-  // =========================
-  google.script.run
-    .withSuccessHandler(res => {
-
-      const el = document.getElementById("result");
-
-      if (res.success) {
-
-        el.innerHTML =
-          "✅ " + data.nama + " (" + data.regId + ") HADIR";
-
-        el.style.color = "lime";
-
-      } else {
-
-        el.innerHTML =
-          "❌ " + res.message;
-
-        el.style.color = "red";
+        scanning = false;
+        return;
       }
 
-      setTimeout(() => scanning = false, 2000);
+      // =========================
+      // KIRIM KE APPS SCRIPT
+      // =========================
+      google.script.run
+        .withSuccessHandler(res => {
 
-    })
-    .checkInPeserta(data.regId);
-}
+          const el = document.getElementById("result");
 
-// =====================
-// SERVICE WORKER
-// =====================
-if ('serviceWorker' in navigator) {
-  navigator.serviceWorker.register('service-worker.js');
-}
+          if (res.success) {
 
-</script>
+            el.innerHTML =
+              "✅ " + data.nama + " (" + data.regId + ") HADIR";
+
+            el.style.color = "lime";
+
+          } else {
+
+            el.innerHTML =
+              "❌ " + res.message;
+
+            el.style.color = "red";
+          }
+
+          setTimeout(() => scanning = false, 2000);
+
+        })
+        .checkInPeserta(data.regId);
+    }
+
+  </script>
 
 </body>
+
 </html>
