@@ -117,42 +117,57 @@ function handleScan(text) {
 
   console.log("RAW QR:", text);
 
-  let regId = text;
+  let data;
 
-  // kalau format JSON
+  // =========================
+  // PARSE JSON QR
+  // =========================
   try {
-    const obj = JSON.parse(text);
-    if (obj.regId) {
-      regId = obj.regId;
-    }
+    data = JSON.parse(text);
   } catch (e) {
-    // bukan JSON → lanjut pakai text biasa
-  }
-
-  // kalau QR kosong
-  if (!regId || regId.trim() === "") {
-    document.getElementById("result").innerText = "QR kosong / tidak valid";
+    document.getElementById("result").innerText =
+      "QR tidak valid (bukan JSON)";
     scanning = false;
     return;
   }
 
+  // =========================
+  // CEK REGID
+  // =========================
+  if (!data.regId) {
+    document.getElementById("result").innerText =
+      "QR tidak punya regId";
+    scanning = false;
+    return;
+  }
+
+  // =========================
+  // KIRIM KE GOOGLE SCRIPT
+  // =========================
   google.script.run
     .withSuccessHandler(res => {
 
       const el = document.getElementById("result");
 
       if (res.success) {
-        el.innerHTML = "✅ " + res.nama + " HADIR";
+
+        el.innerHTML =
+          "✅ " + data.nama + " (" + data.regId + ") HADIR";
+
         el.style.color = "lime";
+
       } else {
-        el.innerHTML = "❌ " + res.message;
+
+        el.innerHTML =
+          "❌ " + res.message;
+
         el.style.color = "red";
       }
 
       setTimeout(() => scanning = false, 2000);
 
     })
-    .checkInPeserta(regId);
+    .checkInPeserta(data.regId);
 }
 
 // =====================
