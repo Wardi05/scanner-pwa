@@ -87,6 +87,7 @@ async function scanLoop() {
   setInterval(async () => {
 
     if (scanning) return;
+    if (video.readyState !== 4) return;
 
     canvas.width = video.videoWidth;
     canvas.height = video.videoHeight;
@@ -102,12 +103,11 @@ async function scanLoop() {
         scanning = true;
 
         handleScan(codes[0].rawValue);
-
       }
 
     } catch (e) {}
 
-  }, 800);
+  }, 500);
 }
 
 // =====================
@@ -117,27 +117,32 @@ function handleScan(text) {
 
   try {
 
-    const data = JSON.parse(text);
+    let regId = text;
 
-    fetch("https://script.google.com/macros/s/AKfycbyedVqzcAkMMEg6p6JsGbxbHqwB59V3MCrISV0ikwvfFDOIH0h-9gdg4aM0gxOJ3oBvQg/exec", {
+    try {
+      const obj = JSON.parse(text);
+      if (obj.regId) {
+        regId = obj.regId;
+      }
+    } catch (e) {}
 
-      method: "POST",
-      body: JSON.stringify({
-        action: "checkin",
-        regId: data.regId
+    google.script.run
+      .withSuccessHandler(res => {
+
+        const el = document.getElementById("result");
+
+        if (res.success) {
+          el.innerHTML = "✅ " + res.nama + " HADIR";
+          el.style.color = "lime";
+        } else {
+          el.innerHTML = "❌ " + res.message;
+          el.style.color = "red";
+        }
+
+        setTimeout(() => scanning = false, 2000);
+
       })
-
-    })
-    .then(r => r.json())
-    .then(res => {
-
-      document.getElementById("result").innerText =
-        res.success ? "✅ " + res.nama + " HADIR"
-                    : "❌ " + res.message;
-
-      setTimeout(() => scanning = false, 3000);
-
-    });
+      .checkInPeserta(regId);
 
   } catch (e) {
 
