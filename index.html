@@ -73,71 +73,95 @@
     // =========================
     // START CAMERA
     // =========================
-    function startCamera() {
+   function startCamera() {
 
-      html5QrCode = new Html5Qrcode("reader");
+  html5QrCode = new Html5Qrcode("reader");
 
-      Html5Qrcode.getCameras().then(cameras => {
+  Html5Qrcode.getCameras().then(cameras => {
 
-        if (!cameras || cameras.length === 0) {
-          alert("Kamera tidak ditemukan");
-          return;
-        }
+    let cameraId = cameras[0].id;
 
-        let cameraId = cameras[0].id;
+    cameras.forEach(c => {
+      if (c.label.toLowerCase().includes("back")) {
+        cameraId = c.id;
+      }
+    });
 
-        // pilih kamera belakang
-        cameras.forEach(c => {
-          if (c.label.toLowerCase().includes("back")) {
-            cameraId = c.id;
-          }
-        });
+    html5QrCode.start(
+      cameraId,
+      {
+        fps: 10,
+        qrbox: 250
+      },
+      onScanSuccess
+    ).catch(err => {
+      alert("Start error: " + err);
+    });
 
-        html5QrCode.start(
-          cameraId,
-          {
-            fps: 10,
-            qrbox: 250
-          },
-          onScanSuccess
-        );
-
-      }).catch(err => {
-        alert("Gagal akses kamera: " + err);
-      });
-    }
+  });
+}
 
     // =========================
     // HANDLE SCAN
     // =========================
     function onScanSuccess(text) {
 
-      if (scanning) return;
-      scanning = true;
+  console.log("RAW QR:", text);
 
-      console.log("QR RAW:", text);
+  let data;
 
-      let data;
+  try {
+    data = JSON.parse(text);
+  } catch (e) {
+    showResult("QR tidak valid", "red");
+    return;
+  }
 
-      try {
-        data = JSON.parse(text);
-      } catch (e) {
+  if (!data.regId) {
+    showResult("QR tidak punya regId", "red");
+    return;
+  }
 
-        document.getElementById("result").innerText =
-          "QR tidak valid";
+  // STOP SCANNER SEMENTARA (WAJIB FIX STUCK)
+  html5QrCode.pause(true);
 
-        scanning = false;
-        return;
+  showResult("Memproses...", "yellow");
+
+  google.script.run
+    .withSuccessHandler(res => {
+
+      if (res && res.success) {
+
+        showResult(
+          "✅ " + data.nama + " HADIR",
+          "lime"
+        );
+
+      } else {
+
+        showResult(
+          "❌ " + (res?.message || "Gagal check-in"),
+          "red"
+        );
       }
 
-      if (!data.regId) {
+      // RESUME SCANNER SETELAH 2 DETIK
+      setTimeout(() => {
+        html5QrCode.resume();
+      }, 2000);
 
-        document.getElementById("result").innerText =
-          "QR tidak punya regId";
+    })
+    .withFailureHandler(err => {
 
-        scanning = false;
-        return;
-      }
+      showResult("Server error", "red");
+
+      setTimeout(() => {
+        html5QrCode.resume();
+      }, 2000);
+
+    })
+    .checkInPeserta(data.regId);
+}
 
       // =========================
       // KIRIM KE APPS SCRIPT
@@ -167,6 +191,11 @@
         })
         .checkInPeserta(data.regId);
     }
+    function showResult(text, color) {
+  const el = document.getElementById("result");
+  el.innerText = text;
+  el.style.color = color;
+}
 
   </script>
 
